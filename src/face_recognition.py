@@ -1,11 +1,12 @@
 import cv2
+from PIL import Image
 from numpy import load
 from numpy import expand_dims
 from numpy import asarray
 from numpy import savez_compressed
 import numpy as np
 import matplotlib.pyplot as plt
-
+import sys
 import time
 import tensorflow as tf
 from tensorflow import keras
@@ -30,15 +31,33 @@ from model.backbone import InceptionResNetV1
 from tensorflow.keras import models
 import os
 
-
+faceCascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 
 
 def stripoff(str_name):
-  s=""
-  for i in str_name:
-    if i.isalnum():
-      s+=i
-  return s
+    for i in str_name:
+        print(i)
+    s = ""
+    for i in str_name:
+        if i.isalnum():
+            s += i
+    return s
+
+
+s1 = u'ÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚÝàáâãèéêìíòóôõùúýĂăĐđĨĩŨũƠơƯưẠạẢảẤấẦầẨẩẪẫẬậẮắẰằẲẳẴẵẶặẸẹẺẻẼẽẾếỀềỂểỄễỆệỈỉỊịỌọỎỏỐốỒồỔổỖỗỘộỚớỜờỞởỠỡỢợỤụỦủỨứỪừỬửỮữỰựỲỳỴỵỶỷỸỹ'
+s0 = u'AAAAEEEIIOOOOUUYaaaaeeeiioooouuyAaDdIiUuOoUuAaAaAaAaAaAaAaAaAaAaAaAaEeEeEeEeEeEeEeEeIiIiOoOoOoOoOoOoOoOoOoOoOoOoUuUuUuUuUuUuUuYyYyYyYy'
+
+
+def remove_accents(input_str):
+    print(input_str)
+    s = ''
+
+    for c in input_str:
+        if c in s1:
+            s += s0[s1.index(c)]
+        else:
+            s += c
+    return s
 
 
 class FaceRecognition:
@@ -82,8 +101,7 @@ class FaceRecognition:
         # summarize
         print('Accuracy: train=%.3f, test=%.3f' % (score_train * 100, score_test * 100))
 
-
-    def predict_face(self,test_face_dir):
+    def predict_face(self, test_face_dir):
         embeded_face = []
         confident_level = []
 
@@ -123,16 +141,15 @@ class FaceRecognition:
                 x, y, w, h = bounding_box[j]
                 cv2.rectangle(faces[j], (x, y), (x + w, y + h), (36, 255, 12), 1)
 
-                predicted_label = stripoff(str(result[result_index].astype(np.unicode))) if confident_level[
-                                                                                                result_index] > 0.4 else "Unknown"
+                predicted_label = remove_accents(str(result[result_index].astype(np.unicode))) if confident_level[
+                                                                                                      result_index] > 0.4 else "Unknown"
                 if predicted_label == "Unknown":
                     cv2.putText(faces[j], predicted_label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9,
-                                             (36, 255, 12), 2)
+                                (36, 255, 12), 2)
                 else:
                     cv2.putText(faces[j], predicted_label + ":" + str(
                         round(confident_level[result_index] * 100)) + "%", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9,
-                                             (36, 255, 12), 2)
-
+                                (36, 255, 12), 2)
 
                 result_index += 1
 
@@ -146,43 +163,51 @@ class FaceRecognition:
         plt.show()
         return result
 
-    def predict_single_face(self,frame):
-        extracted_face, bounding_box = extract_face_(np.expand_dims(frame,axis=0))
-        x,y,w,h = bounding_box[0]
-        embed = get_embedding(self.embbeding_model,extracted_face[0])
-        embed = np.expand_dims(embed,axis=0)
-        in_encoder = Normalizer(norm='l2')
-        embed = in_encoder.transform(embed)
-        y_hat = self.model.predict(asarray(embed))
-        precision = self.model.predict_proba(asarray(embed))
-        precision = np.amax(precision[0])
-        result = self.out_encoder.inverse_transform(y_hat)
-        result = result[0]
+    def predict_single_face(self, frame):
+        # extracted_face, bounding_box = extract_face_(np.expand_dims(frame,axis=0))
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        face = faceCascade.detectMultiScale(
+            gray,
+            scaleFactor=1.1,
+            minNeighbors=5,
+            minSize=(30, 30),
+            flags=cv2.CASCADE_SCALE_IMAGE
 
-        cv2.rectangle(frame, (x, y), (x + w, y + h), (36, 255, 12), 1)
+        )
+        if len(face) == 0:
+            return
+        for f in face:
+            # x,y,w,h = bounding_box[0]
+            x, y, w, h = f
 
-        predicted_label = stripoff(str(result.astype(np.unicode))) if precision > 0.4 else "Unknown"
+            x1, y1 = abs(x), abs(y)
+            x2, y2 = x1 + w, y1 + h
+            # extract the face
+            face = frame[y1:y2, x1:x2]
+            # resize pixels to the model size
+            image = Image.fromarray(face)
+            image = image.resize((160, 160))
+            extracted_face = asarray(image)
+            embed = get_embedding(self.embbeding_model, extracted_face)
+            embed = np.expand_dims(embed, axis=0)
+            in_encoder = Normalizer(norm='l2')
+            embed = in_encoder.transform(embed)
+            y_hat = self.model.predict(asarray(embed))
+            precision = self.model.predict_proba(asarray(embed))
+            precision = np.amax(precision[0])
+            result = self.out_encoder.inverse_transform(y_hat)
+            result = result[0]
+            print(stripoff(result))
 
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (36, 255, 12), 1)
 
+            predicted_label = stripoff(str(result.astype(np.unicode))) if precision > 0.4 else "Unknown"
 
-        if predicted_label == "Unknown":
+            if predicted_label == "Unknown":
 
-            cv2.putText(frame, predicted_label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9,
-                        (36, 255, 12), 2)
-        else:
-            cv2.putText(frame, predicted_label + ":" + str(
-                round(precision * 100)) + "%", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9,
-                        (36, 255, 12), 2)
-        
-
-
-
-
-
-
-
-
-
-
-
-
+                cv2.putText(frame, predicted_label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9,
+                            (36, 255, 12), 2)
+            else:
+                cv2.putText(frame, predicted_label + ":" + str(
+                    round(precision * 100)) + "%", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9,
+                            (36, 255, 12), 2)

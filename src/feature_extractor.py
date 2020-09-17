@@ -27,7 +27,7 @@ def get_embedding(model, face_pixels):
 
 
 def embed_and_save(img_dir ,facenet_model):
-    img_dir = r"C:\Users\SeniorDeV\PycharmProjects\FaceRegconition\utils\cw2_frames"
+    img_dir = r"C:\Users\Thang\Documents\FaceVerification\utils\cw2_frames"
     #embedded_face\cw2_frames
     # load the face dataset
     person, labels = Dataset.load_dataset(img_dir)
